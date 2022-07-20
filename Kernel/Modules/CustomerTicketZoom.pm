@@ -1792,7 +1792,7 @@ sub _Mask {
             );
 
             if ($ACL) {
-                $NextActivityDialogs = $TicketObject->TicketAclData();
+                %{$NextActivityDialogs} = $TicketObject->TicketAclData();
             }
 
             $LayoutObject->Block(
