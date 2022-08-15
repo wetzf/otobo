@@ -59,7 +59,7 @@ sub Run {
     }
 
     # Only update if CustomerID has really changed.
-    return 1 if lc $Param{Data}->{CustomerID} eq lc $Param{Data}->{OldCustomerID};
+    return 1 if $Param{Data}->{CustomerID} eq $Param{Data}->{OldCustomerID};
 
     # If the customer ID has been changed, update dynamic field object name for given name and type.
     my $Success = $Kernel::OM->Get('Kernel::System::DynamicField')->ObjectMappingNameChange(
