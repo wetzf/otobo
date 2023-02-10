@@ -1720,7 +1720,7 @@ sub _Mask {
 
         # get next activity dialogs
         my $NextActivityDialogs;
-        if ( $Param{$ActivityEntityIDField} && IsHashRefWithData( $ActivityData ) && IsHashRefWithData( $AcitivityData->{ActivityDialog} ) ) {
+        if ( $Param{$ActivityEntityIDField} && IsHashRefWithData( $ActivityData ) && IsHashRefWithData( $ActivityData->{ActivityDialog} ) ) {
             $NextActivityDialogs = $ActivityData->{ActivityDialog} || {};
         }
 
