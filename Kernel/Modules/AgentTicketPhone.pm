@@ -229,9 +229,13 @@ sub Run {
     # frontend specific config
     my $Config = $ConfigObject->Get("Ticket::Frontend::$Self->{Action}");
 
+    my %ScriptFields;
+    my $DFIndex = -1;
+
     # cycle through the activated Dynamic Fields for this screen
     DYNAMICFIELD:
     for my $DynamicFieldConfig ( @{ $Self->{DynamicField} } ) {
+        $DFIndex++;
         next DYNAMICFIELD if !IsHashRefWithData($DynamicFieldConfig);
 
         # extract the dynamic field value from the web request
@@ -240,6 +244,14 @@ sub Run {
             ParamObject        => $ParamObject,
             LayoutObject       => $LayoutObject,
         );
+
+        my $IsScriptField = $BackendObject->HasBehavior(
+            DynamicFieldConfig => $DynamicFieldConfig,
+            Behavior           => 'IsScriptField',
+        );
+        next DYNAMICFIELD if !$IsScriptField;
+
+        $ScriptFields{ $DynamicFieldConfig->{Name} } = $DFIndex;
     }
 
     # Fetch input field definition
@@ -1045,6 +1057,58 @@ sub Run {
             }
             else {
                 $Convergence{Fields} = 1;
+            }
+
+            SCRIPTFIELD:
+            for my $Name ( keys %ScriptFields ) {
+                # script field needs to be visible
+                next SCRIPTFIELD if !$DynFieldStates{Visibility}{ 'DynamicField_' . $Name };
+
+                my $DynamicFieldConfig = $Self->{DynamicField}->[ $ScriptFields{ $Name } ];
+                if ( $GetParam{Dest} && $GetParam{Dest} =~ /\|\|(.+)$/ ) {
+                    $GetParam{Queue} = $1;
+                }
+
+                # the required args have to be present
+                for my $Required ( @{ $DynamicFieldConfig->{Config}{RequiredArgs} // [] } ) {
+                    my $Value = $GetParam{DynamicField}{ $Required } // $GetParam{ $Required };
+
+                    next SCRIPTFIELD if !$Value || ( ref $Value && !IsArrayRefWithData( $Value ) );
+                }
+
+                my %AllChangedFields = (
+                    %ChangedElements,
+                    %{ $CurFieldStates{NewValues} || {} },
+                );
+                delete $AllChangedFields{ 'DynamicField_' . $Name };
+
+                # skip if it's only a rerun due to self change
+                next SCRIPTFIELD if !%AllChangedFields && !$InitialRun;
+
+                # if specific AJAX triggers are defined only update on changes to them
+                next SCRIPTFIELD if IsArrayRefWithData( $DynamicFieldConfig->{Config}{AJAXTriggers} )
+                    && !$InitialRun
+                    && !any { $AllChangedFields{ $_ } } $DynamicFieldConfig->{Config}{AJAXTriggers}->@*;
+
+                my $NewValue = $BackendObject->Evaluate(
+                    DynamicFieldConfig => $DynamicFieldConfig,
+                    Object             => {
+                        %GetParam,
+                        CustomerUserID => $CustomerData{UserLogin} || $SplitTicketData{CustomerUserID},
+                    },
+                );
+
+                # do nothing if nothing changed
+                next SCRIPTFIELD if !$BackendObject->ValueIsDifferent(
+                    DynamicFieldConfig => $DynamicFieldConfig,
+                    Value1             => $GetParam{DynamicField}{"DynamicField_$Name"},
+                    Value2             => $NewValue,
+                );
+
+                $GetParam{DynamicField}{"DynamicField_$Name"}                      = $NewValue;
+                $DynFieldStates{Fields}{ $ScriptFields{ $Name } }{NotACLReducible} = 1;
+                $CurFieldStates{NewValues}{"DynamicField_$Name"}                   = 1;
+                $ChangedElementsDFStart{"DynamicField_$Name"}                      = 1;
             }
 
             $InitialRun = 0;
@@ -2321,6 +2385,56 @@ sub Run {
                 $Convergence{Fields} = 1;
             }
 
+            SCRIPTFIELD:
+            for my $Name ( keys %ScriptFields ) {
+                # script field needs to be visible
+                next SCRIPTFIELD if !$DynFieldStates{Visibility}{ 'DynamicField_' . $Name };
+
+                my $DynamicFieldConfig = $Self->{DynamicField}->[ $ScriptFields{ $Name } ];
+                if ( $GetParam{Dest} && $GetParam{Dest} =~ /\|\|(.+)$/ ) {
+                    $GetParam{Queue} = $1;
+                }
+
+                # the required args have to be present
+                for my $Required ( @{ $DynamicFieldConfig->{Config}{RequiredArgs} // [] } ) {
+                    my $Value = $GetParam{DynamicField}{ $Required } // $GetParam{ $Required };
+
+                    next SCRIPTFIELD if !$Value || ( ref $Value && !IsArrayRefWithData( $Value ) );
+                }
+
+                my %AllChangedFields = (
+                    %ChangedElements,
+                    %{ $CurFieldStates{NewValues} || {} },
+                );
+                delete $AllChangedFields{ 'DynamicField_' . $Name };
+
+                # skip if it's only a rerun due to self change
+                next SCRIPTFIELD if !%AllChangedFields;
+
+                # if specific AJAX triggers are defined only update on changes to them
+                next SCRIPTFIELD if IsArrayRefWithData( $DynamicFieldConfig->{Config}{AJAXTriggers} )
+                    && !any { $AllChangedFields{ $_ } } $DynamicFieldConfig->{Config}{AJAXTriggers}->@*;
+
+                my $NewValue = $BackendObject->Evaluate(
+                    DynamicFieldConfig => $DynamicFieldConfig,
+                    Object             => {
+                        %GetParam,
+                        CustomerUserID => $CustomerUser,
+                    },
+                );
+
+                # do nothing if nothing changed
+                next SCRIPTFIELD if !$BackendObject->ValueIsDifferent(
+                    DynamicFieldConfig => $DynamicFieldConfig,
+                    Value1             => $GetParam{DynamicField}{"DynamicField_$Name"},
+                    Value2             => $NewValue,
+                );
+
+                $GetParam{DynamicField}{"DynamicField_$Name"}                      = $NewValue;
+                $DynFieldStates{Fields}{ $ScriptFields{ $Name } }{NotACLReducible} = 1;
+                $CurFieldStates{NewValues}{"DynamicField_$Name"}                   = 1;
+                $ChangedElementsDFStart{"DynamicField_$Name"}                      = 1;
+            }
         }
 
         # update Dynamic Fields Possible Values via AJAX

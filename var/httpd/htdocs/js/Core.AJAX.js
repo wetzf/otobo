@@ -413,6 +413,8 @@ Core.AJAX = (function (TargetNS) {
             if ($Element.hasClass('Modernize')) {
                 $Element.trigger('redraw.InputField');
             }
+
+            $Element.trigger('blur');
         });
     }
 

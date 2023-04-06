@@ -427,6 +427,64 @@ sub _RenderAjax {
 
             next DIALOGFIELD if !IsHashRefWithData($DynamicFieldConfig);
 
+            my $IsScriptField = $BackendObject->HasBehavior(
+                DynamicFieldConfig => $DynamicFieldConfig,
+                Behavior           => 'IsScriptField',
+            );
+
+            if ( $IsScriptField ) {
+                # the required args have to be present
+                for my $Required ( @{ $DynamicFieldConfig->{Config}{RequiredArgs} // [] } ) {
+                    my $Value = $Param{GetParam}{ $Required } // $Param{GetParam}{ $Required };
+
+                    next DIALOGFIELD if !$Value || ( ref $Value && !IsArrayRefWithData( $Value ) );
+                }
+
+                # if specific AJAX triggers are defined only update on changes to them
+                next DIALOGFIELD if IsArrayRefWithData( $DynamicFieldConfig->{Config}{AJAXTriggers} )
+                    && !any { $_ eq $Param{GetParam}{ElementChanged} } $DynamicFieldConfig->{Config}{AJAXTriggers}->@*;
+
+                my $NewValue = $BackendObject->Evaluate(
+                    DynamicFieldConfig => $DynamicFieldConfig,
+                    Object             => {
+                        $Param{GetParam}->%*,
+                        CustomerUserID => $Self->{UserID},
+                        AJAXUpdate     => 1,
+                    },
+                );
+
+                # do nothing if nothing changed
+                next DIALOGFIELD if !$BackendObject->ValueIsDifferent(
+                    DynamicFieldConfig => $DynamicFieldConfig,
+                    Value1             => $Param{GetParam}{"DynamicField_$DynamicFieldConfig->{Name}"},
+                    Value2             => $NewValue,
+                );
+
+                # add dynamic field to the list of fields to update
+                if ( $DynamicFieldConfig->{Config}{MultiValue} && ref $NewValue ) {
+                    for my $i ( 0..$#{ $NewValue } ) {
+                        my $Name = $i ? "DynamicField_$DynamicFieldConfig->{Name}$Self->{IDSuffix}_$i" : "DynamicField_$DynamicFieldConfig->{Name}$Self->{IDSuffix}";
+
+                        push @JSONCollector, {
+                            Name        => $Name,
+                            Data        => $NewValue->[$i],
+                            SelectedID  => $Param{GetParam}{"DynamicField_$DynamicFieldConfig->{Name}"}[$i],
+                            Translation => $DynamicFieldConfig->{Config}->{TranslatableValues} || 0,
+                            Max         => 100,
+                        };
+                    }
+                }
+                else {
+                    push @JSONCollector, {
+                        Name        => "DynamicField_$DynamicFieldConfig->{Name}",
+                        Data        => $NewValue,
+                        SelectedID  => $Param{GetParam}{"DynamicField_$DynamicFieldConfig->{Name}"},
+                        Translation => $DynamicFieldConfig->{Config}->{TranslatableValues} || 0,
+                        Max         => 100,
+                    };
+                }
+            }
+
             my $IsACLReducible = $BackendObject->HasBehavior(
                 DynamicFieldConfig => $DynamicFieldConfig,
                 Behavior           => 'IsACLReducible',
@@ -969,7 +1027,7 @@ sub _GetParam {
         }
     }
     REQUIREDFIELDLOOP:
-    for my $CurrentField (qw(Queue State Lock Priority)) {
+    for my $CurrentField (qw(State Lock Priority)) {
         $Value = undef;
         if ( !$ValuesGotten{ $Self->{NameToID}{$CurrentField} } ) {
             $Value = $ConfigObject->Get("Process::Default$CurrentField");
@@ -1010,6 +1068,8 @@ sub _GetParam {
     }
 
     # and finally we'll have the special parameters:
+    $GetParam{ElementChanged} = $Param{ElementChanged} || $ParamObject->GetParam( Param => 'ElementChanged' ) || '';
+    $GetParam{ElementChanged} =~ s/_[^_]+$//;
     $GetParam{ResponsibleAll} = $ParamObject->GetParam( Param => 'ResponsibleAll' );
     $GetParam{OwnerAll}       = $ParamObject->GetParam( Param => 'OwnerAll' );
 

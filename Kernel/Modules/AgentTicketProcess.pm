@@ -665,6 +665,63 @@ sub _RenderAjax {
 
             next DIALOGFIELD if !IsHashRefWithData($DynamicFieldConfig);
 
+            my $IsScriptField = $DynamicFieldBackendObject->HasBehavior(
+                DynamicFieldConfig => $DynamicFieldConfig,
+                Behavior           => 'IsScriptField',
+            );
+
+            if ( $IsScriptField ) {
+                # the required args have to be present
+                for my $Required ( @{ $DynamicFieldConfig->{Config}{RequiredArgs} // [] } ) {
+                    my $Value = $Param{GetParam}{ $Required } // $Param{GetParam}{ $Required };
+
+                    next DIALOGFIELD if !$Value || ( ref $Value && !IsArrayRefWithData( $Value ) );
+                }
+
+                # if specific AJAX triggers are defined only update on changes to them
+                next DIALOGFIELD if IsArrayRefWithData( $DynamicFieldConfig->{Config}{AJAXTriggers} )
+                    && !any { $_ eq $Param{GetParam}{ElementChanged} } $DynamicFieldConfig->{Config}{AJAXTriggers}->@*;
+
+                my $NewValue = $DynamicFieldBackendObject->Evaluate(
+                    DynamicFieldConfig => $DynamicFieldConfig,
+                    Object             => {
+                        $Param{GetParam}->%*,
+                        CustomerUserID => $Param{GetParam}{CustomerUserID},
+                    },
+                );
+
+                # do nothing if nothing changed
+                next DIALOGFIELD if !$DynamicFieldBackendObject->ValueIsDifferent(
+                    DynamicFieldConfig => $DynamicFieldConfig,
+                    Value1             => $Param{GetParam}{"DynamicField_$DynamicFieldConfig->{Name}"},
+                    Value2             => $NewValue,
+                );
+
+                # add dynamic field to the list of fields to update
+                if ( $DynamicFieldConfig->{Config}{MultiValue} && ref $NewValue ) {
+                    for my $i ( 0..$#{ $NewValue } ) {
+                        my $Name = $i ? "DynamicField_$DynamicFieldConfig->{Name}$Self->{IDSuffix}_$i" : "DynamicField_$DynamicFieldConfig->{Name}$Self->{IDSuffix}";
+
+                        push @JSONCollector, {
+                            Name        => $Name,
+                            Data        => $NewValue->[$i],
+                            SelectedID  => $Param{GetParam}{"DynamicField_$DynamicFieldConfig->{Name}"}[$i],
+                            Translation => $DynamicFieldConfig->{Config}->{TranslatableValues} || 0,
+                            Max         => 100,
+                        };
+                    }
+                }
+                else {
+                    push @JSONCollector, {
+                        Name        => "DynamicField_$DynamicFieldConfig->{Name}",
+                        Data        => $NewValue,
+                        SelectedID  => $Param{GetParam}{"DynamicField_$DynamicFieldConfig->{Name}"},
+                        Translation => $DynamicFieldConfig->{Config}->{TranslatableValues} || 0,
+                        Max         => 100,
+                    };
+                }
+            }
+
             my $IsACLReducible = $DynamicFieldBackendObject->HasBehavior(
                 DynamicFieldConfig => $DynamicFieldConfig,
                 Behavior           => 'IsACLReducible',
@@ -1404,6 +1461,8 @@ sub _GetParam {
     $GetParam{ResponsibleAll} = $ParamObject->GetParam( Param => 'ResponsibleAll' );
     $GetParam{OwnerAll}       = $ParamObject->GetParam( Param => 'OwnerAll' );
     $GetParam{ElementChanged} = $ParamObject->GetParam( Param => 'ElementChanged' );
+    $GetParam{ElementChanged} //= '';
+    $GetParam{ElementChanged} =~ s/_[^_]+$//;
 
     return \%GetParam;
 }
