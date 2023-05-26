@@ -1258,6 +1258,9 @@ sub Run {
             next DYNAMICFIELD if !IsHashRefWithData($DynamicFieldConfig);
             next DYNAMICFIELD if !$Visibility{"DynamicField_$DynamicFieldConfig->{Name}"};
 
+            # TODO Article fields should only be set if article is created
+            # Code suggestion: next DYNAMICFIELD if !$GetParam{CreateArticle} && $DynamicFieldConfig->{ObjectType} eq 'Article';
+
             # set the object ID (TicketID or ArticleID) depending on the field configration
             my $ObjectID = $DynamicFieldConfig->{ObjectType} eq 'Article' ? $ArticleID : $Self->{TicketID};
 

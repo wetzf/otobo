@@ -58,6 +58,7 @@ sub ValueIsDifferent {
 
     # Special cases where one value is a scalar and the other one is an array (see bug#13998).
     # TODO Causes error message, potentially rewrite this
+    # TODO In some cases, Value1 seems to be undef which leads to error message (not sure if duplicate of above TODO)
     if ( ref \$Param{Value1} eq 'SCALAR' && ref $Param{Value2} eq 'ARRAY' ) {
         my @TmpArray1 = sort split /,/, $Param{Value1};
         my @TmpArray2 = sort @{ $Param{Value2} };
